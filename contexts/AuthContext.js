@@ -8,11 +8,15 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const session = supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    });
-
+    // 1. Initial session check
+    const checkSession = async () => {
+        const { data } = await supabase.auth.getSession();
+        setUser(data.session?.user ?? null);
+        setLoading(false);
+    };
+    checkSession();
+    
+    // 2. Listener for auth state changes
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setUser(session?.user ?? null);
@@ -23,8 +27,18 @@ export const AuthProvider = ({ children }) => {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email, password) => {
-    const { error } = await supabase.auth.signUp({ email, password });
+  // UPDATED: signUp function to accept and save displayName AND gender
+  const signUp = async (email, password, displayName, gender) => {
+    const { error } = await supabase.auth.signUp({ 
+        email, 
+        password, 
+        options: { // Use the options object to pass metadata
+            data: {
+                display_name: displayName, // Store the name
+                gender: gender,          // Store the new gender field
+            },
+        },
+    });
     if (error) throw error;
   };
 

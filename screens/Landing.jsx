@@ -1,11 +1,18 @@
 import React, { useEffect, useRef } from "react";
-import { StyleSheet, Animated, TouchableOpacity } from "react-native";
+import {
+  StyleSheet,
+  Animated,
+  TouchableOpacity,
+  ImageBackground,
+  View,
+} from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useTheme } from "../contexts/ThemeContext";
 
-import ThemedLogo from "../components/ThemedLogo";
 import ThemedText from "../components/ThemedText";
 import Spacer from "../components/Spacer";
+
+const BACKGROUND_IMAGE = require("../assets/img/logo.jpg");
 
 export default function Landing() {
   const { theme } = useTheme();
@@ -23,54 +30,84 @@ export default function Landing() {
   // Safely extract theme colors
   const backgroundColor =
     typeof theme.background === "string" ? theme.background : "#FFFFFF";
-  const textColor =
-    typeof theme.text === "string" ? theme.text : "#111111";
+  const textColor = typeof theme.text === "string" ? theme.text : "#111111";
   const buttonColor =
     typeof theme.primary === "string" ? theme.primary : "#4B7BEC";
 
+  // Define the opacity for the color overlay (0.0 to 1.0)
+  // Higher opacity means the background image is more faded.
+  const OVERLAY_OPACITY = 0.6;
+
   return (
-    <Animated.View
-      style={[styles.container, { opacity: fadeAnim, backgroundColor }]}
+    <ImageBackground
+      source={BACKGROUND_IMAGE}
+      style={styles.imageBackground}
+      resizeMode="cover"
     >
-      <ThemedLogo />
-      <Spacer height={30} />
+      {/* Color Overlay View: This covers the image and uses the theme color
+                with defined opacity to ensure the text is readable in both light/dark modes. */}
+      <View
+        style={[
+          styles.overlay,
+          { backgroundColor: backgroundColor, opacity: OVERLAY_OPACITY },
+        ]}
+      />
 
-      <ThemedText style={[styles.title, { color: textColor }]}>
-        Your Daily Journal
-      </ThemedText>
-      <Spacer height={10} />
-      <ThemedText style={[styles.subtitle, { color: textColor }]}>
-        Capture your thoughts, reflect, and grow.
-      </ThemedText>
-      <Spacer height={20} />
-      <ThemedText style={[styles.tagline, { color: textColor }]}>
-        Start your journey today ✨
-      </ThemedText>
-      <Spacer height={30} />
+      {/* Animated Container for Text and Buttons (Content Layer) */}
+      <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
+        {/* The problematic comments have been removed/corrected. 
+                  We're keeping the spacer for layout.
+                */}
+        <Spacer height={100} />
 
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: buttonColor }]}
-        onPress={() => navigation.navigate("Login")}
-      >
-        <ThemedText style={styles.buttonText}>Sign In</ThemedText>
-      </TouchableOpacity>
+        <ThemedText style={[styles.title, { color: textColor }]}>
+          My Daily Journal
+        </ThemedText>
+        <Spacer height={10} />
+        <ThemedText style={[styles.subtitle, { color: textColor }]}>
+          Capture your thoughts, reflect and grow.
+        </ThemedText>
+        <Spacer height={20} />
+        <ThemedText style={[styles.tagline, { color: textColor }]}>
+          Start your journey today ✨
+        </ThemedText>
+        <Spacer height={30} />
 
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: buttonColor }]}
-        onPress={() => navigation.navigate("Signup")}
-      >
-        <ThemedText style={styles.buttonText}>Create Account</ThemedText>
-      </TouchableOpacity>
-    </Animated.View>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: buttonColor }]}
+          onPress={() => navigation.navigate("Login")}
+        >
+          <ThemedText style={styles.buttonText}>Sign In</ThemedText>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: buttonColor }]}
+          onPress={() => navigation.navigate("Signup")}
+        >
+          <ThemedText style={styles.buttonText}>Register</ThemedText>
+        </TouchableOpacity>
+      </Animated.View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  imageBackground: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+  },
+  overlay: {
+    // Stretches across the entire screen
+    ...StyleSheet.absoluteFillObject,
+  },
+  contentContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 20,
+    // Ensure the content sits on top of the overlay
+    zIndex: 1,
   },
   title: {
     fontSize: 30,

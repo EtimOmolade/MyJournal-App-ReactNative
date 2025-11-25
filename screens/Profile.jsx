@@ -2,29 +2,35 @@ import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
   View,
-  FlatList,
   ScrollView,
   TouchableOpacity,
   Keyboard,
   TouchableWithoutFeedback,
-  Switch,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ThemedText from "../components/ThemedText";
 import ThemedView from "../components/ThemedView";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { supabase } from "../lib/supabase";
 import { useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+
+const EDIT_PROFILE_SCREEN = "EditProfile";
+const NEW_ENTRY_SCREEN = "NewEntry";
 
 export default function ProfileDashboard() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+
+  const displayName = user?.user_metadata?.display_name || user?.email;
 
   const [entries, setEntries] = useState([]);
   const [streak, setStreak] = useState(0);
-  const [lastEntryDate, setLastEntryDate] = useState("");
+  const [lastEntryDate, setLastEntryDate] = useState("-");
   const [quote, setQuote] = useState("");
   const [today, setToday] = useState("");
 
@@ -36,26 +42,70 @@ export default function ProfileDashboard() {
     "Let your thoughts flow freely today.",
   ];
 
-  useEffect(() => {
-    setQuote(quotes[Math.floor(Math.random() * quotes.length)]);
-    setToday(new Date().toDateString());
-    fetchEntries();
-  }, []);
+  const isDarkMode = theme.background === "#000000";
 
+  // --- CALCULATE REAL JOURNAL STREAK ---
+  const calculateStreak = (entries) => {
+    if (!entries.length) return 0;
+
+    // Convert to dates only (no time)
+    const entryDates = [
+      ...new Set(
+        entries.map((e) =>
+          new Date(e.created_at).toISOString().split("T")[0]
+        )
+      ),
+    ].sort((a, b) => new Date(b) - new Date(a));
+
+    let currentStreak = 0;
+    let cursor = new Date(); // today
+
+    for (let date of entryDates) {
+      const cursorStr = cursor.toISOString().split("T")[0];
+
+      if (date === cursorStr) {
+        currentStreak += 1;
+        cursor.setDate(cursor.getDate() - 1); // move to yesterday
+      } else break;
+    }
+
+    return currentStreak;
+  };
+
+  // --- FETCH ENTRIES ---
   const fetchEntries = async () => {
     const { data, error } = await supabase
       .from("journal_entries")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (!error) {
-      setEntries(data);
-      if (data.length > 0) {
-        setLastEntryDate(new Date(data[0].created_at).toDateString());
-        setStreak(Math.min(data.length, 30)); // placeholder streak calculation
-      }
+    if (error) return;
+
+    setEntries(data);
+
+    if (data.length > 0) {
+      setLastEntryDate(new Date(data[0].created_at).toDateString());
+      setStreak(calculateStreak(data));
     }
   };
+
+  useEffect(() => {
+    setQuote(quotes[Math.floor(Math.random() * quotes.length)]);
+    setToday(new Date().toDateString());
+
+    fetchEntries();
+
+    const subscription = supabase
+      .channel("public:journal_entries")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "journal_entries" },
+        fetchEntries
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(subscription);
+  }, []);
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -63,106 +113,114 @@ export default function ProfileDashboard() {
         colors={[theme.background, theme.inputBackground]}
         style={{ flex: 1 }}
       >
-        <ThemedView style={styles.container}>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Profile Info */}
-            <View style={[styles.profileCard, { backgroundColor: theme.uiBackground }]}>
-              <View style={styles.avatarPlaceholder}>
-                <ThemedText style={{ fontSize: 28, color: theme.text }}>
-                  {user?.email[0].toUpperCase()}
-                </ThemedText>
-              </View>
-              <ThemedText style={[styles.profileName, { color: theme.text }]}>
-                {user?.email}
+        <ThemedView
+          safe
+          style={{
+            flex: 1,
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+          }}
+        >
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollViewContent}
+          >
+            {/* --- TOP BAR --- */}
+            <View style={styles.topBar}>
+              <ThemedText style={[styles.topBarText, { color: theme.text }]}>
+                Profile
               </ThemedText>
-              <TouchableOpacity
-                style={[styles.editButton, { backgroundColor: theme.primary }]}
-              >
-                <ThemedText style={styles.editButtonText}>Edit Profile</ThemedText>
+
+              <TouchableOpacity onPress={toggleTheme} style={styles.themeToggleIcon}>
+                <Ionicons
+                  name={isDarkMode ? "sunny-sharp" : "moon-sharp"}
+                  size={35}
+                  color={isDarkMode ? "#FFD700" : "#cc590dff"}
+                />
               </TouchableOpacity>
             </View>
 
-            {/* Stats */}
-            <View style={[styles.statsCard, { backgroundColor: theme.uiBackground }]}>
-              <ThemedText style={styles.statsTitle}>Your Stats</ThemedText>
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <ThemedText style={styles.statNumber}>{entries.length}</ThemedText>
-                  <ThemedText style={styles.statLabel}>Entries</ThemedText>
-                </View>
-                <View style={styles.statItem}>
-                  <ThemedText style={styles.statNumber}>{streak}</ThemedText>
-                  <ThemedText style={styles.statLabel}>Day Streak</ThemedText>
-                </View>
-                <View style={styles.statItem}>
-                  <ThemedText style={styles.statNumber}>{lastEntryDate || "-"}</ThemedText>
-                  <ThemedText style={styles.statLabel}>Last Entry</ThemedText>
-                </View>
+            {/* --- PROFILE CARD --- */}
+            <View
+              style={[
+                styles.profileCard,
+                { backgroundColor: theme.uiBackground },
+              ]}
+            >
+              <View
+                style={[
+                  styles.avatarPlaceholder,
+                  { backgroundColor: theme.primary + "50" },
+                ]}
+              >
+                <ThemedText style={{ fontSize: 32, color: theme.primary }}>
+                  {displayName[0]?.toUpperCase()}
+                </ThemedText>
               </View>
+
+              <ThemedText style={[styles.profileName, { color: theme.text }]}>
+                {displayName}
+              </ThemedText>
+
+              <ThemedText
+                style={[styles.emailText, { color: theme.text, opacity: 0.7 }]}
+              >
+                {user?.email}
+              </ThemedText>
+
+              <TouchableOpacity
+                style={[styles.editButton, { backgroundColor: theme.primary }]}
+                onPress={() => navigation.navigate(EDIT_PROFILE_SCREEN)}
+              >
+                <ThemedText style={styles.editButtonText}>Update Profile</ThemedText>
+              </TouchableOpacity>
             </View>
 
-            {/* Daily Quote */}
+            {/* --- QUOTE CARD --- */}
             <View style={[styles.card, { backgroundColor: theme.uiBackground }]}>
               <ThemedText style={styles.quoteLarge}>"{quote}"</ThemedText>
               <ThemedText style={styles.date}>{today}</ThemedText>
             </View>
 
-            {/* Recent Entries */}
-            <View style={styles.sectionHeader}>
-              <ThemedText style={styles.sectionTitle}>Recent Entries</ThemedText>
-              <TouchableOpacity onPress={() => navigation.navigate("AllEntries")}>
-                <ThemedText style={{ color: theme.primary }}>See All</ThemedText>
-              </TouchableOpacity>
-            </View>
+            {/* --- STATS CARD --- */}
+            <View style={[styles.statsCard, { backgroundColor: theme.uiBackground }]}>
+              <ThemedText style={styles.statsTitle}>My Stats</ThemedText>
 
-            {entries.length ? (
-              <FlatList
-                data={entries.slice(0, 5)}
-                keyExtractor={(item) => item.id}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 20 }}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate("EditEntry", { entry: item })}
-                    style={[styles.entryCard, { backgroundColor: theme.uiBackground }]}
-                  >
-                    <ThemedText style={styles.entryDate}>
-                      {new Date(item.created_at).toDateString()}
-                    </ThemedText>
-                    <ThemedText style={styles.entryContent}>
-                      {item.content.substring(0, 100)}...
-                    </ThemedText>
-                  </TouchableOpacity>
-                )}
-              />
-            ) : (
-              <ThemedText style={{ textAlign: "center", marginTop: 10 }}>
-                No entries yet
-              </ThemedText>
-            )}
+              <View style={styles.statsRow}>
+                <View style={styles.statItem}>
+                  <ThemedText style={styles.statNumber}>{entries.length}</ThemedText>
+                  <ThemedText style={styles.statLabel}>Entries</ThemedText>
+                </View>
 
-            {/* New Entry Button */}
-            <TouchableOpacity
-              style={[styles.newEntryButton, { backgroundColor: theme.primary }]}
-              onPress={() => navigation.navigate("NewEntry")}
-            >
-              <ThemedText style={styles.buttonText}>Write New Entry</ThemedText>
-            </TouchableOpacity>
+                <View style={styles.statItem}>
+                  <ThemedText style={styles.statNumber}>{streak}</ThemedText>
+                  <ThemedText style={styles.statLabel}>Day Streak</ThemedText>
+                </View>
 
-            {/* Theme Toggle */}
-            <View style={[styles.themeCard, { backgroundColor: theme.uiBackground }]}>
-              <ThemedText style={styles.statsTitle}>Theme</ThemedText>
-              <View style={styles.themeRow}>
-                <ThemedText style={{ color: theme.text }}>Dark Mode</ThemedText>
-                <Switch
-                  value={theme.background === "#000000"}
-                  onValueChange={toggleTheme}
-                  trackColor={{ false: "#ccc", true: theme.primary }}
-                  thumbColor="#fff"
-                />
+                <View style={styles.statItem}>
+                  <ThemedText style={styles.statLabelDate}>
+                    {lastEntryDate}
+                  </ThemedText>
+                  <ThemedText style={styles.statLabel}>Last Entry</ThemedText>
+                </View>
               </View>
             </View>
+
+            {/* --- NEW ENTRY BUTTON --- */}
+            <TouchableOpacity
+              style={[styles.newEntryButton, { backgroundColor: theme.primary }]}
+              onPress={() => navigation.navigate(NEW_ENTRY_SCREEN)}
+            >
+              <ThemedText style={styles.buttonText}>New Entry</ThemedText>
+            </TouchableOpacity>
+
+            {/* --- LOGOUT BUTTON --- */}
+            <TouchableOpacity
+              style={[styles.logoutButton, { backgroundColor: "#D9534F" }]}
+              onPress={signOut}
+            >
+              <ThemedText style={styles.logoutText}>Logout</ThemedText>
+            </TouchableOpacity>
           </ScrollView>
         </ThemedView>
       </LinearGradient>
@@ -171,71 +229,98 @@ export default function ProfileDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 20 },
+  scrollViewContent: {
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 50,
+  },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 25,
+    alignItems: "center",
+  },
+  topBarText: {
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  themeToggleIcon: {
+    padding: 5,
+  },
   profileCard: {
-    borderRadius: 12,
-    padding: 20,
+    borderRadius: 15,
+    padding: 25,
     marginBottom: 20,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 10,
-    elevation: 5,
   },
   avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#999",
+    width: 90,
+    height: 90,
+    borderRadius: 50,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  profileName: { fontSize: 20, fontWeight: "bold", marginBottom: 10 },
-  editButton: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8, marginTop: 10 },
-  editButtonText: { color: "#fff", fontWeight: "600" },
-
-  statsCard: {
-    borderRadius: 12,
+  profileName: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 5,
+  },
+  emailText: {
+    fontSize: 14,
+    marginBottom: 5,
+  },
+  editButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 25,
+    marginTop: 10,
+  },
+  editButtonText: { color: "#fff", fontWeight: "700" },
+  card: {
+    borderRadius: 15,
     padding: 20,
     marginBottom: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 3,
   },
-  statsTitle: { fontSize: 18, fontWeight: "600", marginBottom: 15 },
-  statsRow: { flexDirection: "row", justifyContent: "space-between" },
-  statItem: { alignItems: "center" },
-  statNumber: { fontSize: 20, fontWeight: "bold" },
-  statLabel: { fontSize: 14, opacity: 0.7 },
-
-  card: { borderRadius: 12, padding: 20, marginBottom: 20, shadowColor: "#000", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 3 }, shadowRadius: 6, elevation: 3 },
-  quoteLarge: { fontSize: 18, fontStyle: "italic", textAlign: "center", marginBottom: 10 },
+  quoteLarge: {
+    fontSize: 18,
+    fontStyle: "italic",
+    textAlign: "center",
+    marginBottom: 10,
+  },
   date: { fontSize: 14, opacity: 0.7, textAlign: "center" },
-
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
-  sectionTitle: { fontSize: 18, fontWeight: "600" },
-
-  entryCard: {
-    width: 220,
-    padding: 15,
-    borderRadius: 12,
-    marginRight: 15,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 6,
-    elevation: 3,
+  statsCard: {
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
   },
-  entryDate: { fontSize: 12, opacity: 0.7, marginBottom: 5 },
-  entryContent: { fontSize: 14, lineHeight: 20 },
-
-  newEntryButton: { padding: 15, borderRadius: 12, alignItems: "center", marginBottom: 20 },
-  buttonText: { color: "white", fontWeight: "600", fontSize: 16 },
-
-  themeCard: { borderRadius: 12, padding: 20, marginBottom: 40, shadowColor: "#000", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 3 }, shadowRadius: 6, elevation: 3 },
-  themeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  statsTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+  statsRow: { flexDirection: "row", justifyContent: "space-around" },
+  statItem: { alignItems: "center" },
+  statNumber: { fontSize: 22, fontWeight: "bold" },
+  statLabel: { fontSize: 14, opacity: 0.7 },
+  statLabelDate: { fontSize: 14, fontWeight: "600", textAlign: "center" },
+  newEntryButton: {
+    padding: 15,
+    borderRadius: 25,
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  logoutButton: {
+    padding: 15,
+    borderRadius: 25,
+    alignItems: "center",
+    marginBottom: 40,
+  },
+  logoutText: {
+    color: "white",
+    fontWeight: "700",
+    fontSize: 16,
+  },
 });
