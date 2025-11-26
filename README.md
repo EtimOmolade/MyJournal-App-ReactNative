@@ -1,4 +1,4 @@
- **MyJournal**- Your Personal Digital Journal
+### **MyJournal**- Your Personal Digital Journal
 
 **MyJournal** is a modern, intuitive journaling app designed to help you capture your thoughts, track your daily activities, and reflect on your personal growth. With a clean, user-friendly interface, MyJournal allows you to easily write, edit, and organize your entries, while keeping your private life secure.
 
@@ -35,8 +35,8 @@ Deployment: Android & iOS via Expo Go / EAS Build
 
 ---
 ### *App Previews*
+![NewEntry](https://github.com/user-attachments/assets/415d74b8-8797-4d75-8020-68621c8fa6e9)
 
-![NewEntry](https://github.com/user-attachments/assets/fa170f25-2bb8-48d8-ac88-592e28d29f85)
 ---
 
 ### *Developer*
